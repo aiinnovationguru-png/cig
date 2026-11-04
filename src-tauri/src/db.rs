@@ -90,6 +90,10 @@ fn migrate(conn: &Connection) -> DbResult<()> {
         "INTEGER NOT NULL DEFAULT 1",
     )?;
     add_column(conn, "notices", "text_hash", "TEXT")?;
+    add_column(conn, "lots", "lot_number", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(conn, "lots", "description", "TEXT")?;
+    add_column(conn, "lots", "awarded_value", "REAL")?;
+    add_column(conn, "lots", "status", "TEXT")?;
     migrate_user_signals_pk(conn)?;
     Ok(())
 }
@@ -527,6 +531,32 @@ fn merge_duplicate_notice(conn: &Connection, keeper: &str, loser: &str) -> DbRes
             keeper
         ],
     )?;
+
+    // I documenti caricati dall'utente non devono essere cancellati insieme
+    // al doppione. Se lo stesso contenuto esiste già, conserva un'analisi
+    // disponibile; altrimenti riaggancia il documento senza cambiarne l'id.
+    let documents: Vec<(String, String)> = {
+        let mut statement = conn.prepare("SELECT id, hash FROM notice_documents WHERE notice_id = ?")?;
+        let rows = statement.query_map([loser], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for (document_id, hash) in documents {
+        use rusqlite::OptionalExtension;
+        let existing: Option<String> = conn.query_row(
+            "SELECT id FROM notice_documents WHERE notice_id = ? AND hash = ?",
+            rusqlite::params![keeper, hash], |row| row.get(0),
+        ).optional()?;
+        if let Some(existing_id) = existing {
+            conn.execute(
+                "INSERT OR IGNORE INTO document_analysis (document_id, version, payload, created_at)
+                 SELECT ?, version, payload, created_at FROM document_analysis WHERE document_id = ?",
+                rusqlite::params![existing_id, document_id],
+            )?;
+        } else {
+            conn.execute("UPDATE notice_documents SET notice_id = ? WHERE id = ?",
+                rusqlite::params![keeper, document_id])?;
+        }
+    }
 
     conn.execute("DELETE FROM notices WHERE id = ?", [loser])?;
     Ok(())

@@ -36,17 +36,7 @@ fn clean(value: &str) -> String {
 }
 
 fn number(value: Option<&String>) -> Option<f64> {
-    let raw = value?.trim();
-    if raw.is_empty() {
-        return None;
-    }
-    let normalized = raw.replace([' ', '\u{00a0}'], "");
-    let candidate = if normalized.contains(',') && !normalized.contains('.') {
-        normalized.replace(',', ".")
-    } else {
-        normalized.replace(',', "")
-    };
-    candidate.parse::<f64>().ok().filter(|value| value.is_finite())
+    crate::italian_numbers::parse(value?)
 }
 
 fn integer(value: Option<&String>) -> Option<i64> {
