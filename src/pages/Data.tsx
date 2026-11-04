@@ -118,7 +118,15 @@ export default function DataPage({
       await loadSummary();
       onStatsChanged();
     } catch (error) {
-      notify(String(error), "error");
+      const message = String(error);
+      setProgress(null);
+      setLog((previous) => [
+        `Importazione interrotta: ${message}. I dati già salvati restano disponibili; è possibile riprovare.`,
+        ...previous,
+      ].slice(0, 10));
+      notify(message, "error");
+      await loadSummary();
+      onStatsChanged();
     } finally {
       setRunning(null);
     }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type EmbeddingStatus, type Settings } from "../api";
 import { Field, Spinner } from "../components/ui";
 
@@ -13,15 +13,31 @@ export default function SettingsPage({
   const [testing, setTesting] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    Promise.all([api.getSettings(), api.embeddingStatus()])
-      .then(([config, embedding]) => {
-        setSettings(config);
-        setStatus(embedding);
-      })
-      .catch((error) => notify(String(error), "error"))
-      .finally(() => setLoading(false));
+  const statusRequest = useRef(0);
+  const refreshStatus = useCallback(() => {
+    const request = ++statusRequest.current;
+    setStatus(null);
+    // L'inizializzazione del modello può richiedere un download lungo: non
+    // bloccare la modifica delle impostazioni mentre è in corso.
+    void api.embeddingStatus().then((embedding) => {
+      if (request === statusRequest.current) setStatus(embedding);
+    }).catch((error) => {
+      if (request === statusRequest.current) notify(String(error), "error");
+    });
   }, [notify]);
+
+  useEffect(() => {
+    let active = true;
+    void api.getSettings().then((config) => {
+      if (active) setSettings(config);
+    }).catch((error) => {
+      if (active) notify(String(error), "error");
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    refreshStatus();
+    return () => { active = false; statusRequest.current++; };
+  }, [notify, refreshStatus]);
 
   const patch = (values: Partial<Settings>) =>
     setSettings((previous) => (previous ? { ...previous, ...values } : previous));
@@ -33,7 +49,7 @@ export default function SettingsPage({
       const saved = await api.saveSettings(settings);
       setSettings(saved);
       notify("Impostazioni salvate");
-      setStatus(await api.embeddingStatus());
+      refreshStatus();
     } catch (error) {
       notify(String(error), "error");
     } finally {
@@ -61,7 +77,7 @@ export default function SettingsPage({
     );
   }
 
-  const providerChanged = settings.embeddingProvider !== (status?.provider === "api" ? "api" : "local");
+  const providerChanged = status !== null && settings.embeddingProvider !== status.provider;
   const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   return (
@@ -82,7 +98,7 @@ export default function SettingsPage({
               <div>
                 <h2 className="text-[13px] font-semibold text-heading">Ricerca semantica</h2>
                 <p className="mt-0.5 text-[11px] text-slate-500">
-                  Il modello locale gira offline sul tuo computer dopo il primo download (~120 MB).
+                  Il modello locale gira offline sul tuo computer dopo il primo download (~470 MB).
                 </p>
               </div>
               <div className="flex items-center gap-2 text-[10.5px]">
