@@ -49,7 +49,8 @@ pub fn similar_to(conn: &Connection, notice_id: &str, limit: i64) -> Result<Vec<
             "SELECT n.id, n.title, n.buyer_name, n.region, n.awarded_value, n.estimated_value,
                     n.discount_pct, n.published_at, n.url, e.embedding
              FROM notices n JOIN notice_embedding e ON e.notice_id = n.id
-             WHERE n.kind = 'award' AND n.id <> ?",
+             WHERE n.kind = 'award' AND n.id <> ?
+               AND NOT EXISTS (SELECT 1 FROM user_signals s WHERE s.notice_id=n.id AND s.signal='hide')",
         )?;
         let mut rows = statement.query([notice_id])?;
         while let Some(row) = rows.next()? {
@@ -86,6 +87,7 @@ pub fn similar_to(conn: &Connection, notice_id: &str, limit: i64) -> Result<Vec<
              FROM notices n
              JOIN notice_cpv c ON c.notice_id = n.id
              WHERE n.kind = 'award' AND n.id <> ?
+               AND NOT EXISTS (SELECT 1 FROM user_signals s WHERE s.notice_id=n.id AND s.signal='hide')
                AND c.cpv IN (SELECT cpv FROM notice_cpv WHERE notice_id = ?)
              ORDER BY n.published_at DESC LIMIT ?",
         )?;

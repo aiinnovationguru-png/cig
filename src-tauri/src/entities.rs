@@ -545,8 +545,9 @@ pub fn entity_suggestions(
     let kind = entity_type(kind)?;
     let needle = format!("%{}%", query.trim().to_lowercase());
     let sql = if kind == "supplier" {
-        "SELECT id, name, COUNT(*) AS contracts, COALESCE(SUM(awarded_value), 0)
-         FROM suppliers WHERE lower(name) LIKE ? GROUP BY id ORDER BY contracts DESC LIMIT ?"
+        "SELECT s.id, s.name, COUNT(a.id) AS contracts, COALESCE(SUM(a.awarded_value), 0)
+         FROM suppliers s LEFT JOIN awards a ON a.supplier_id = s.id
+         WHERE lower(s.name) LIKE ? GROUP BY s.id, s.name ORDER BY contracts DESC LIMIT ?"
     } else {
         "SELECT id, name, 1, 0 FROM buyers WHERE lower(name) LIKE ? ORDER BY name LIMIT ?"
     };

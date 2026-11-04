@@ -1,0 +1,17 @@
+# Dependencies and build outputs
+node_modules/
+dist/
+src-tauri/target/
+__pycache__/
+*.py[cod]
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

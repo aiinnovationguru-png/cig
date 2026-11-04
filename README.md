@@ -1,8 +1,54 @@
 # CIG — Intelligence appalti Italia
 
+> **Stato del repository:** ricostruzione in corso. Sono stati ricostruiti i
+> moduli mancanti, ma **la build Rust/Tauri completa e i flussi end-to-end non
+> sono ancora verificati**. I test locali coprono il frontend, lo schema SQLite
+> e alcune funzioni Rust isolate; non attestano che ingestione, ricerca,
+> export, email o modello di embedding funzionino in produzione. In particolare
+> la copertura dei campi TED, le riconciliazioni tra fonti e i download reali
+> richiedono verifica su dati reali. Le funzionalità sotto descrivono gli
+> obiettivi del progetto, non una garanzia di completezza.
+>
+> La versione desktop mantiene l'architettura locale. È disponibile anche
+> un'anteprima web separata, con archivio opzionale su Supabase.
+
 Applicazione desktop per trovare, valutare e seguire le gare pubbliche italiane.
 Backend **Rust**, interfaccia **Tauri 2 + React**: nessun server da ospitare,
 nessun account cloud obbligatorio, i dati restano sul computer.
+
+## Anteprima web (Supabase)
+
+Con Node.js 22, avvia il frontend nel browser con `npm install` e `npm run dev`. Per impostazione
+predefinita usa il progetto Supabase di prova collegato a questo repository;
+URL e chiave **pubblicabile** sono nel codice client e non sono credenziali
+privilegiate. Per usare un altro progetto, copia `.env.example` in `.env.local`
+e imposta URL e chiave pubblicabile. Non inserire mai service-role o secret key
+nelle variabili `VITE_*` o nel frontend.
+
+Senza accesso, l'app mostra tre gare fittizie e salva le modifiche solo nella
+sessione del browser. Dopo l'accesso, l'archivio è separato dalla demo e usa la
+tabelle `public.cig_web_notices` e `public.cig_web_evaluations`: le migrazioni
+in `supabase/migrations/` abilitano RLS e limitano lettura e modifiche al
+proprietario autenticato. Nessun dato della desktop viene importato automaticamente.
+
+Nell'anteprima sono disponibili creazione e modifica manuale, ricerca testuale,
+filtro per regione, bacheca con trascinamento o menu accessibile, calendario
+mensile ed export Excel dei risultati filtrati. La valutazione delle relazioni
+accetta testo incollato o file TXT, consente di modificare i criteri e mostra
+corrispondenze letterali, frasi e un punteggio indicativo proporzionale alle
+parole trovate: non interpreta il contesto, non è un punteggio ufficiale e non
+sostituisce una verifica esperta. Si salva solo su richiesta: in demo nella
+sessione, da autenticati nel proprio archivio. Importazioni TED/ANAC, ricerca
+semantica, analisi PDF, alert email e le restanti funzioni desktop non sono
+ancora collegate nel browser.
+
+La registrazione richiede conferma email: il progetto deve consentire l'URL di
+ritorno in Supabase Auth e avere la consegna email configurata per i destinatari
+desiderati. L'URL dell'anteprima Arena corrente è stato aggiunto alla allowlist
+senza rimuovere quello preesistente; è temporaneo e andrà aggiornato per un
+altro host. La registrazione e il salvataggio online non sono ancora stati
+verificati end-to-end con un account reale. L'anteprima non è un deployment
+pubblico permanente e non equivale alla versione desktop completa.
 
 ## Cosa fa
 
@@ -52,9 +98,9 @@ npm run app        # sviluppo (Vite + Tauri)
 npm run bundle     # installer MSI/NSIS
 ```
 
-Serve Rust stable con toolchain MSVC. Il file `.cargo/config.toml` imposta
-`INCLUDE`/`LIB` del Windows SDK per questa macchina: se cambi versione dei Build
-Tools o dell'SDK, aggiorna i percorsi.
+Su Windows servono Rust stable con toolchain MSVC, Visual Studio Build Tools e
+WebView2. Su Linux servono anche le dipendenze di sistema Tauri, tra cui
+WebKitGTK 4.1. Non sono impostati percorsi SDK specifici di una macchina.
 
 La prima esecuzione scarica il modello di embedding (~470 MB) in
 `%APPDATA%\it.cig.intelligence\models`; poi funziona offline. La cache è stabile
@@ -106,11 +152,14 @@ la fonte del record diventa `ted`. I CIG duplicati vengono eliminati. Al primo
 avvio dopo l'aggiornamento, l'app riconcilia una tantum anche i doppioni CIG già
 presenti in archivio, conservando la scheda con più dati e i collegamenti utente.
 
-## Dati locali
+## Dati locali (versione desktop)
 
 - Database: `%APPDATA%\it.cig.intelligence\cig.db`
 - Modello: `%APPDATA%\it.cig.intelligence\models`
 - Export Excel: `%APPDATA%\it.cig.intelligence\export`
+
+Le eventuali credenziali SMTP e chiavi API sono memorizzate in chiaro nel
+file locale `settings.json`: proteggi l'account e i backup del computer.
 
 Nessun dato viene inviato a servizi esterni, salvo:
 - le richieste HTTP a TED/ANAC durante l'ingestione;
@@ -180,7 +229,7 @@ restano modificabili e la valutazione viene salvata con il testo analizzato.
 ```
 src/                     interfaccia React
 src-tauri/src/
-  ted/                   client API TED e normalizzazione avvisi
+  ted/                   normalizzazione dei risultati TED
   anac/                  client CKAN, ZIP mensili CIG e normalizzazione ANAC
   ingest.rs              scrittura idempotente, merge e deduplica per CIG
   search.rs              filtri, FTS5, similarità, previsioni, schede, segnali
@@ -195,18 +244,22 @@ src-tauri/src/
   db.rs                  apertura, migrazioni e backfill CIG/CUP
 examples/smoke.rs        verifica sul database reale
 examples/anac_smoke.rs   verifica ingestione ANAC su copia del database
-tests/pipeline.rs        test end-to-end contro TED reale
+tests/                   test dei contratti UI e dello schema SQLite
 ```
 
 ## Verifica
 
 ```bash
-cd src-tauri
-cargo test --lib                                    # unit test
-cargo test --test pipeline -- --ignored --nocapture # rete: ingest TED, ricerca, export
-cargo run --example smoke                           # database reale, nessuna email
-cargo run --example anac_smoke -- 2026-09-01 2026-09-30
+npm ci
+npm test                         # contratti statici frontend/Tauri
+npm run build                    # typecheck e build frontend
+python -m unittest discover -s tests -p "test_*.py" -v  # schema SQLite
+cargo test --manifest-path src-tauri/Cargo.toml --lib  # backend, se disponibili dipendenze e toolchain
 ```
+
+La workflow GitHub Actions verifica questi passaggi su Windows quando viene
+eseguita. I test SQLite e frontend non sostituiscono un test end-to-end con TED,
+ANAC, SMTP e un modello di embedding realmente disponibili.
 
 ## Limiti noti (v1)
 

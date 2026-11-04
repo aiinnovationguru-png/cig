@@ -466,7 +466,10 @@ pub async fn export_search(
 ) -> Result<ExportResult, String> {
     let settings = current_settings(&state);
     let mut vector = None;
-    if !request.query.trim().is_empty() && settings.embeddings_ready() {
+    if !request.query.trim().is_empty()
+        && !request.keyword_only.unwrap_or(false)
+        && settings.embeddings_ready()
+    {
         if let Ok(mut vectors) =
             embed::embed_texts(vec![request.query.trim().to_string()], &settings, true).await
         {
@@ -721,7 +724,8 @@ pub fn save_settings(
     let previous = current_settings(&state);
     settings.save(&state.paths.settings_path).map_err(to_error)?;
     let model_changed = previous.embedding_provider != settings.embedding_provider
-        || previous.api_model != settings.api_model;
+        || previous.api_model != settings.api_model
+        || (settings.embedding_provider == "api" && previous.api_base_url != settings.api_base_url);
     if let Ok(mut guard) = state.settings.write() {
         *guard = settings.clone();
     }
@@ -814,30 +818,36 @@ pub async fn embed_pending(
             .map_err(to_error)?;
 
         {
+            // Mantieni il lock delle impostazioni fino al commit: un cambio di
+            // modello non deve lasciare in archivio vettori del modello vecchio.
+            let current = state.settings.read().map_err(to_error)?;
+            if current.embedding_provider != settings.embedding_provider
+                || current.api_model != settings.api_model
+                || (settings.embedding_provider == "api" && current.api_base_url != settings.api_base_url)
+            {
+                return Err("Il modello è cambiato durante il calcolo: riavvia la vettorizzazione.".into());
+            }
             let mut conn = state.db.conn();
             let tx = conn.transaction().map_err(to_error)?;
-            for (((id, _, _, _), vector), hash) in
+            for (((id, title, description, buyer), vector), hash) in
                 rows.iter().zip(vectors.iter()).zip(hashes.iter())
             {
-                tx.execute(
+                // L'ingestione potrebbe aver modificato il testo mentre il
+                // modello lavorava. Non associare mai un vettore obsoleto.
+                let changed = tx.execute(
                     "INSERT INTO notice_embedding (notice_id, embedding, model, dims, updated_at)
-                     VALUES (?, ?, ?, ?, ?)
+                     SELECT ?, ?, ?, ?, ? WHERE EXISTS (
+                       SELECT 1 FROM notices WHERE id = ? AND title = ?
+                         AND description IS ? AND buyer_name IS ?)
                      ON CONFLICT(notice_id) DO UPDATE SET embedding = excluded.embedding,
-                     model = excluded.model, updated_at = excluded.updated_at",
-                    rusqlite::params![
-                        id,
-                        embed::to_blob(vector),
-                        model,
-                        embed::EMBEDDING_DIMS as i64,
-                        now_iso()
-                    ],
-                )
-                .map_err(to_error)?;
-                tx.execute(
-                    "UPDATE notices SET text_hash = ? WHERE id = ?",
-                    rusqlite::params![hash, id],
-                )
-                .map_err(to_error)?;
+                     model = excluded.model, dims = excluded.dims, updated_at = excluded.updated_at",
+                    rusqlite::params![id, embed::to_blob(vector), model,
+                        embed::EMBEDDING_DIMS as i64, now_iso(), id, title, description, buyer],
+                ).map_err(to_error)?;
+                if changed != 0 {
+                    tx.execute("UPDATE notices SET text_hash = ? WHERE id = ?",
+                        rusqlite::params![hash, id]).map_err(to_error)?;
+                }
             }
             tx.commit().map_err(to_error)?;
         }
