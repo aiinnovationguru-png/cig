@@ -43,8 +43,12 @@ sessione, da autenticati nel proprio archivio. La ricerca TED tramite funzione
 Supabase autenticata permette di cercare gli avvisi italiani recenti (massimo 90
 giorni, prime 20 pagine) e salvarli individualmente senza sovrascrivere note o
 stato. La funzione e la migrazione sono nel repository; il flusso con un account
-reale non è ancora stato verificato end-to-end. Importazione ANAC, ricerca
-semantica, analisi automatica dei disciplinari, alert email e le restanti funzioni desktop non sono
+reale non è ancora stato verificato end-to-end. La risposta della fonte TED e
+il rifiuto delle richieste non autenticate sono stati verificati in CI. È anche
+possibile leggere manualmente un CSV ANAC nel browser: la funzione esamina solo
+le prime 5.000 righe, mostra fino a 100 CIG e salva singolarmente quelli scelti;
+non è un'importazione completa, automatica o una deduplica incrociata TED/ANAC.
+Ricerca semantica, analisi automatica dei disciplinari, alert email e le restanti funzioni desktop non sono
 ancora collegate nel browser.
 
 La registrazione richiede conferma email: il progetto deve consentire l'URL di

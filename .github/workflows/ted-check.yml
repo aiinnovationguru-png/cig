@@ -1,7 +1,7 @@
 name: Verifica TED e protezione endpoint
 on:
   push:
-    branches: [arena/4ee6aed1-cig]
+    branches: [main, "arena/**"]
   workflow_dispatch:
 permissions:
   contents: read

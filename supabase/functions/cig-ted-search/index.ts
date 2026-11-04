@@ -36,6 +36,19 @@ function normalize(n: Record<string, unknown>) {
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (req.method !== 'POST') return json(405, { error: 'Metodo non consentito.' });
+  // Gateway JWT verification also accepts an anonymous project key. Validate the
+  // caller as a real authenticated Supabase user, not merely a valid anon JWT.
+  const authorization = req.headers.get('Authorization') ?? '';
+  if (!/^Bearer \S+$/i.test(authorization)) return json(401, { error: 'Accesso richiesto.' });
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  if (!supabaseUrl || !anonKey) return json(503, { error: 'Servizio di autenticazione non configurato.' });
+  try {
+    const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { Authorization: authorization, apikey: anonKey }, signal: AbortSignal.timeout(5000) });
+    if (!userResponse.ok) return json(401, { error: 'Sessione non valida. Accedi nuovamente.' });
+    const user = await userResponse.json();
+    if (!user || typeof user.id !== 'string' || user.role !== 'authenticated') return json(401, { error: 'Accesso richiesto.' });
+  } catch { return json(503, { error: 'Servizio di autenticazione non disponibile.' }); }
   try {
     const raw = await req.text(); if (raw.length > 2048) return json(413, { error: 'Richiesta troppo grande.' });
     const input = JSON.parse(raw || '{}');
