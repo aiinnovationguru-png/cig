@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -94,7 +95,7 @@ impl Settings {
 
     /// I valori arrivano anche da un file modificato a mano: qui si riportano
     /// nei limiti accettati dal resto dell'app.
-    fn sanitized(mut self) -> Self {
+    pub(crate) fn sanitized(mut self) -> Self {
         if self.smtp_port == 0 {
             self.smtp_port = 587;
         }
@@ -119,13 +120,15 @@ impl Settings {
         let json = serde_json::to_string_pretty(&self.clone().sanitized()).map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
         })?;
-        // Scrittura atomica: un crash a metà non lascia un file corrotto.
-        let tmp = path.with_extension("json.tmp");
-        fs::write(&tmp, json)?;
-        if path.exists() {
-            fs::remove_file(path)?;
-        }
-        fs::rename(&tmp, path)
+        // File unico nella stessa directory: persist sostituisce il file esistente
+        // senza cancellarlo prima, anche su Windows. In caso di errore il vecchio
+        // file rimane disponibile; i file temporanei non si scontrano tra salvataggi.
+        let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        tmp.write_all(json.as_bytes())?;
+        tmp.as_file().sync_all()?;
+        tmp.persist(path).map_err(|err| err.error)?;
+        Ok(())
     }
 
     pub fn smtp_configured(&self) -> bool {
@@ -136,5 +139,33 @@ impl Settings {
 
     pub fn embeddings_ready(&self) -> bool {
         self.embedding_provider == "local" || !self.api_key.trim().is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_replaces_existing_settings_and_sanitizes_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(&path, "old settings").unwrap();
+        let settings = Settings { alert_hour: 99, smtp_port: 0, ..Settings::default() };
+        settings.save(&path).unwrap();
+        let loaded = Settings::load(&path);
+        assert_eq!(loaded.alert_hour, 7);
+        assert_eq!(loaded.smtp_port, 587);
+    }
+
+    #[test]
+    fn failed_save_never_removes_existing_target_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("settings.json");
+        fs::create_dir(&target).unwrap();
+        let marker = target.join("keep.txt");
+        fs::write(&marker, b"preserve").unwrap();
+        assert!(Settings::default().save(&target).is_err());
+        assert_eq!(fs::read(&marker).unwrap(), b"preserve");
     }
 }

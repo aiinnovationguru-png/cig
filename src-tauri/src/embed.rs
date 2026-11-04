@@ -58,26 +58,27 @@ fn model_cache_dir() -> Option<std::path::PathBuf> {
     None
 }
 
+// Fallimenti temporanei di rete o disco non devono avvelenare l'intera sessione.
+// L'inizializzazione riuscita viene memorizzata, quella fallita può essere riprovata.
+fn get_or_try_init<'a, T>(slot: &'a OnceLock<T>, lock: &Mutex<()>, init: impl FnOnce() -> Result<T>) -> Result<&'a T> {
+    if let Some(value) = slot.get() { return Ok(value); }
+    let _guard = lock.lock().map_err(|_| anyhow!("inizializzazione del modello bloccata"))?;
+    if let Some(value) = slot.get() { return Ok(value); }
+    let value = init()?;
+    slot.set(value).map_err(|_| anyhow!("inizializzazione concorrente del modello"))?;
+    slot.get().ok_or_else(|| anyhow!("modello non inizializzato"))
+}
+
 fn local_model() -> Result<&'static Mutex<TextEmbedding>> {
-    static MODEL: OnceLock<Result<Mutex<TextEmbedding>, String>> = OnceLock::new();
-    let slot = MODEL.get_or_init(|| {
+    static MODEL: OnceLock<Mutex<TextEmbedding>> = OnceLock::new();
+    static INIT_LOCK: Mutex<()> = Mutex::new(());
+    get_or_try_init(&MODEL, &INIT_LOCK, || {
         let mut options = InitOptions::new(EmbeddingModel::MultilingualE5Small)
             .with_show_download_progress(false);
-        // Una cache stabile evita di riscaricare ~470 MB a ogni avvio e rende
-        // l'app utilizzabile offline dopo il primo download.
-        if let Some(dir) = model_cache_dir() {
-            options = options.with_cache_dir(dir);
-        }
-        TextEmbedding::try_new(options)
-            .map(Mutex::new)
-            .map_err(|err| err.to_string())
-    });
-    match slot {
-        Ok(model) => Ok(model),
-        Err(message) => Err(anyhow!(
-            "modello di embedding non disponibile: {message}"
-        )),
-    }
+        if let Some(dir) = model_cache_dir() { options = options.with_cache_dir(dir); }
+        TextEmbedding::try_new(options).map(Mutex::new)
+            .map_err(|err| anyhow!("modello di embedding non disponibile: {err}"))
+    })
 }
 
 fn normalize(mut vector: Vec<f32>) -> Vec<f32> {
@@ -116,7 +117,9 @@ async fn embed_api(texts: Vec<String>, settings: &Settings) -> Result<Vec<Vec<f3
         "{}/embeddings",
         settings.api_base_url.trim_end_matches('/')
     );
-    let response = reqwest::Client::new()
+    let response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(90))
+        .build()?
         .post(&url)
         .bearer_auth(settings.api_key.trim())
         .json(&serde_json::json!({
@@ -138,38 +141,38 @@ async fn embed_api(texts: Vec<String>, settings: &Settings) -> Result<Vec<Vec<f3
     }
 
     let body: serde_json::Value = response.json().await?;
-    let mut rows: Vec<(usize, Vec<f32>)> = Vec::new();
-    for entry in body
-        .get("data")
-        .and_then(|data| data.as_array())
-        .into_iter()
-        .flatten()
-    {
-        let index = entry.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-        let vector: Vec<f32> = entry
-            .get("embedding")
-            .and_then(|v| v.as_array())
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(|value| value.as_f64().map(|v| v as f32))
-                    .collect()
-            })
-            .unwrap_or_default();
-        if vector.len() != EMBEDDING_DIMS {
-            return Err(anyhow!(
-                "il modello API ha restituito {} dimensioni invece di {EMBEDDING_DIMS}; \
-                 usa un modello con output a 384 dimensioni",
-                vector.len()
-            ));
+    parse_api_embeddings(&body, texts.len())
+}
+
+/// Una risposta incompleta, riordinata male o con valori non validi non deve
+/// associare il vettore di un avviso a un altro avviso.
+fn parse_api_embeddings(body: &serde_json::Value, expected: usize) -> Result<Vec<Vec<f32>>> {
+    let entries = body.get("data").and_then(|data| data.as_array())
+        .ok_or_else(|| anyhow!("risposta API embedding priva di dati"))?;
+    if entries.len() != expected { return Err(anyhow!("l'API ha restituito un numero di vettori diverso")); }
+    let mut rows: Vec<Option<Vec<f32>>> = vec![None; expected];
+    for entry in entries {
+        let index = entry.get("index").and_then(|v| v.as_u64())
+            .and_then(|v| usize::try_from(v).ok())
+            .filter(|index| *index < expected)
+            .ok_or_else(|| anyhow!("indice embedding API mancante o fuori intervallo"))?;
+        if rows[index].is_some() { return Err(anyhow!("indice embedding API duplicato")); }
+        let values = entry.get("embedding").and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow!("vettore embedding API mancante"))?;
+        if values.len() != EMBEDDING_DIMS {
+            return Err(anyhow!("il modello API ha restituito {} dimensioni invece di {EMBEDDING_DIMS}", values.len()));
         }
-        rows.push((index, normalize(vector)));
+        let mut vector = Vec::with_capacity(EMBEDDING_DIMS);
+        for value in values {
+            let number = value.as_f64().ok_or_else(|| anyhow!("valore embedding API non numerico"))? as f32;
+            if !number.is_finite() { return Err(anyhow!("valore embedding API non finito")); }
+            vector.push(number);
+        }
+        let norm = vector.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if !norm.is_finite() || norm <= f32::EPSILON { return Err(anyhow!("vettore embedding API nullo o non valido")); }
+        rows[index] = Some(normalize(vector));
     }
-    if rows.len() != texts.len() {
-        return Err(anyhow!("l'API ha restituito un numero di vettori diverso"));
-    }
-    rows.sort_by_key(|(index, _)| *index);
-    Ok(rows.into_iter().map(|(_, vector)| vector).collect())
+    rows.into_iter().map(|row| row.ok_or_else(|| anyhow!("indice embedding API mancante"))).collect()
 }
 
 pub async fn embed_texts(
@@ -261,4 +264,39 @@ pub fn warm_up(settings: Settings) {
     std::thread::spawn(move || {
         let _ = local_model();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn failed_initialization_can_be_retried() {
+        let slot = OnceLock::new();
+        let lock = Mutex::new(());
+        let attempts = AtomicUsize::new(0);
+        let first = get_or_try_init(&slot, &lock, || -> Result<u32> {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            Err(anyhow!("offline"))
+        });
+        assert!(first.is_err());
+        assert_eq!(*get_or_try_init(&slot, &lock, || { attempts.fetch_add(1, Ordering::SeqCst); Ok(42) }).unwrap(), 42);
+        assert_eq!(*get_or_try_init(&slot, &lock, || { attempts.fetch_add(1, Ordering::SeqCst); Ok(99) }).unwrap(), 42);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn api_results_reorder_by_index_and_reject_duplicates_or_invalid_vectors() {
+        let mut a = vec![0.0; EMBEDDING_DIMS]; a[0] = 2.0;
+        let mut b = vec![0.0; EMBEDDING_DIMS]; b[1] = 3.0;
+        let valid = json!({"data":[{"index":1,"embedding":b},{"index":0,"embedding":a}]});
+        let vectors = parse_api_embeddings(&valid, 2).unwrap();
+        assert_eq!(vectors[0][0], 1.0); assert_eq!(vectors[1][1], 1.0);
+        let duplicate = json!({"data":[{"index":0,"embedding":vec![1.0; EMBEDDING_DIMS]},{"index":0,"embedding":vec![1.0; EMBEDDING_DIMS]}]});
+        assert!(parse_api_embeddings(&duplicate, 2).is_err());
+        assert!(parse_api_embeddings(&json!({"data":[{"index":1,"embedding":vec![1.0; EMBEDDING_DIMS]}]}), 1).is_err());
+        assert!(parse_api_embeddings(&json!({"data":[{"index":0,"embedding":vec![0.0; EMBEDDING_DIMS]}]}), 1).is_err());
+    }
 }

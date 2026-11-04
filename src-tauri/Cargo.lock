@@ -577,6 +577,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "zip 2.6.1",

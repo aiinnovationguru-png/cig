@@ -721,19 +721,24 @@ pub fn save_settings(
     state: State<'_, AppState>,
     settings: Settings,
 ) -> Result<Settings, String> {
-    let previous = current_settings(&state);
-    settings.save(&state.paths.settings_path).map_err(to_error)?;
+    // Serializza i salvataggi ed evita che memoria e file usino valori diversi.
+    let settings = settings.sanitized();
+    let mut guard = state.settings.write().map_err(to_error)?;
+    let previous = guard.clone();
     let model_changed = previous.embedding_provider != settings.embedding_provider
         || previous.api_model != settings.api_model
         || (settings.embedding_provider == "api" && previous.api_base_url != settings.api_base_url);
-    if let Ok(mut guard) = state.settings.write() {
-        *guard = settings.clone();
-    }
     if model_changed {
-        let conn = state.db.conn();
-        conn.execute("DELETE FROM notice_embedding", []).map_err(to_error)?;
-        conn.execute("DELETE FROM search_embedding", []).map_err(to_error)?;
+        // Le tabelle sono derivate e ricostruibili: cancellarle insieme prima
+        // di cambiare provider evita di mescolare vettori incompatibili.
+        let mut conn = state.db.conn();
+        let tx = conn.transaction().map_err(to_error)?;
+        tx.execute("DELETE FROM notice_embedding", []).map_err(to_error)?;
+        tx.execute("DELETE FROM search_embedding", []).map_err(to_error)?;
+        tx.commit().map_err(to_error)?;
     }
+    settings.save(&state.paths.settings_path).map_err(to_error)?;
+    *guard = settings.clone();
     Ok(settings)
 }
 
