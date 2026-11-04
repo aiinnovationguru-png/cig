@@ -1,0 +1,28 @@
+name: Verifica TED e protezione endpoint
+on:
+  push:
+    branches: [arena/4ee6aed1-cig]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Interroga TED per avvisi italiani recenti
+        shell: bash
+        run: |
+          from=$(date -u -d '30 days ago' +%Y%m%d)
+          curl -sS --fail-with-body --max-time 30 -H 'Content-Type: application/json' \
+            -d "{\"query\":\"buyer-country = ITA AND form-type = competition AND publication-date >= $from SORT BY publication-date DESC\",\"fields\":[\"publication-number\",\"notice-title\",\"buyer-name\",\"description-proc\",\"description-lot\",\"classification-cpv\",\"publication-date\",\"deadline-receipt-tender-date-lot\",\"estimated-value-proc\",\"estimated-value-cur-proc\"],\"limit\":25,\"page\":1,\"scope\":\"ALL\",\"paginationMode\":\"PAGE_NUMBER\"}" \
+            https://api.ted.europa.eu/v3/notices/search -o /tmp/ted.json
+          node -e "const x=require('/tmp/ted.json'); if (!Array.isArray(x.notices) || x.timedOut) throw new Error('Invalid/timeout TED response'); console.log('Official TED response OK, notices:', x.notices.length)"
+      - name: Verifica che la funzione Supabase neghi richieste non autenticate
+        shell: bash
+        run: |
+          status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -X POST \
+            -H 'Content-Type: application/json' \
+            -H 'apikey: sb_publishable_Dv_6c1rLy2tAyobh87eY-g_YlmJiQ2z' \
+            -d '{}' https://ulfxnswidqjsxsjmknws.supabase.co/functions/v1/cig-ted-search)
+          echo "Unauthenticated status: $status"
+          test "$status" = '401'

@@ -3,6 +3,7 @@ export type Notice = {
   id: string; title: string; buyer: string; region: string; cig: string;
   deadline: string | null; estimated_value: number | null; source: string;
   stage: Stage | null; notes: string; created_at: string; updated_at: string;
+  external_id?: string | null; official_url?: string | null; description?: string; cpv?: string; published_on?: string | null;
 };
 export const stages: { key: Stage; label: string; color: string }[] = [
   { key: 'valutare', label: 'Da valutare', color: 'bg-amber-400' },
