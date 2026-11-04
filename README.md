@@ -57,12 +57,13 @@ desiderati. L'URL dell'anteprima Arena corrente è stato aggiunto alla allowlist
 senza rimuovere quello preesistente; è temporaneo e andrà aggiornato per un
 altro host. La registrazione, il recupero password e il salvataggio online non sono ancora stati
 verificati end-to-end con un account reale. L'anteprima non è un deployment
-pubblico permanente e non equivale alla versione desktop completa. È predisposto
-un workflow per GitHub Pages (`.github/workflows/pages.yml`), ma Pages non è
-ancora abilitato nel repository: l'integrazione GitHub ha risposto 403 alla
-richiesta di attivazione. Dopo l'abilitazione da parte di un amministratore e
-l'integrazione del workflow su `main`, il percorso previsto è
-`https://aiinnovationguru-png.github.io/cig/`; non è attualmente pubblicato.
+pubblico permanente e non equivale alla versione desktop completa. GitHub Pages
+è abilitato e il workflow di pubblicazione è predisposto in
+`.github/workflows/pages.yml`. L'ambiente `github-pages` consente deployment da
+`main`: il workflow è attualmente nel branch di lavoro e il sito non è ancora
+pubblicato. Una volta integrato su `main`, il percorso previsto è
+`https://aiinnovationguru-png.github.io/cig/`. La pubblicazione non elimina le
+limitazioni funzionali e di verifica descritte sopra.
 
 ## Cosa fa
 
