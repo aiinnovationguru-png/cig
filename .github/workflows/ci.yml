@@ -23,3 +23,30 @@ jobs:
       - run: npm run build
       - run: python -m unittest discover -s tests -p "test_*.py" -v
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+      - name: Compila e crea installer desktop Windows (debug, non firmato)
+        run: npm run tauri -- build --debug --bundles nsis
+      - name: Verifica installazione e avvio desktop
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/debug/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $installer) { throw "Installer NSIS non trovato" }
+          $installDir = Join-Path $env:RUNNER_TEMP "CIG-smoke"
+          $setup = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
+          if ($setup.ExitCode -ne 0) { throw "Installazione NSIS fallita: $($setup.ExitCode)" }
+          $exe = Join-Path $installDir 'cig.exe'
+          if (-not (Test-Path $exe)) { throw "Eseguibile installato non trovato: $exe" }
+          $app = Start-Process -FilePath $exe -PassThru
+          try {
+            Start-Sleep -Seconds 15
+            $app.Refresh()
+            if ($app.HasExited) { throw "L'app si è chiusa subito dopo l'avvio: $($app.ExitCode)" }
+          } finally {
+            if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+          }
+      - name: Conserva installer di verifica
+        uses: actions/upload-artifact@v4
+        with:
+          name: CIG-Windows-installer-debug
+          path: src-tauri/target/debug/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 7

@@ -1,9 +1,10 @@
 # CIG — Intelligence appalti Italia
 
 > **Stato del repository:** ricostruzione in corso. Sono stati ricostruiti i
-> moduli mancanti, ma **la build Rust/Tauri completa e i flussi end-to-end non
-> sono ancora verificati**. I test locali coprono il frontend, lo schema SQLite
-> e alcune funzioni Rust isolate; non attestano che ingestione, ricerca,
+> moduli mancanti, ma **i flussi desktop end-to-end non sono ancora verificati**.
+> La CI Windows compila e testa la libreria Rust; tenta anche una build Tauri
+> con installer NSIS di debug e un controllo automatico di installazione e avvio.
+> I test coprono frontend, schema SQLite e funzioni Rust; non attestano che ingestione, ricerca,
 > export, email o modello di embedding funzionino in produzione. In particolare
 > la copertura dei campi TED, le riconciliazioni tra fonti e i download reali
 > richiedono verifica su dati reali. Le funzionalità sotto descrivono gli
@@ -112,6 +113,12 @@ npm install
 npm run app        # sviluppo (Vite + Tauri)
 npm run bundle     # installer MSI/NSIS
 ```
+
+La CI Windows esegue i test e produce, se il passaggio di build riesce, un
+installer NSIS **di debug e non firmato** tra gli artifact della singola esecuzione
+GitHub Actions (conservazione 7 giorni). La CI tenta anche un'installazione
+silenziosa e controlla che il processo resti avviato per 15 secondi. È una build di verifica, non una release
+certificata: può attivare SmartScreen e non sostituisce il collaudo su Windows.
 
 Su Windows servono Rust stable con toolchain MSVC, Visual Studio Build Tools e
 WebView2. Su Linux servono anche le dipendenze di sistema Tauri, tra cui

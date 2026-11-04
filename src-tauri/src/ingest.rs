@@ -63,6 +63,19 @@ pub fn save_batch(path:&Path,batch:&[BatchRow])->Result<BatchStats> {
     tx.commit()?; Ok(result)
 }
 
+/// Non scambiare una risposta parziale TED per un'importazione completa.
+fn validate_ted_page(data: &Value) -> Result<(&Vec<Value>, Option<String>)> {
+    if data.get("timedOut").and_then(Value::as_bool) == Some(true) {
+        bail!("TED ha interrotto la ricerca per timeout: importazione incompleta, riprova");
+    }
+    let notices = data.get("notices").and_then(Value::as_array).context("risposta TED priva di avvisi")?;
+    if notices.is_empty() { return Ok((notices, None)); }
+    let token = data.get("iterationNextToken").and_then(Value::as_str)
+        .filter(|token| !token.trim().is_empty())
+        .context("TED non ha restituito il cursore della pagina successiva: importazione incompleta")?;
+    Ok((notices, Some(token.to_string())))
+}
+
 pub async fn run(path:PathBuf,from:String,to:String,types:Vec<String>,progress:impl Fn(IngestProgress)+Send+Sync)->Result<IngestStats> {
     let from_date=chrono::NaiveDate::parse_from_str(&from,"%Y-%m-%d").context("data iniziale non valida")?;
     let to_date=chrono::NaiveDate::parse_from_str(&to,"%Y-%m-%d").context("data finale non valida")?;
@@ -79,14 +92,15 @@ pub async fn run(path:PathBuf,from:String,to:String,types:Vec<String>,progress:i
         let response=client.post("https://api.ted.europa.eu/v3/notices/search").json(&body).send().await.context("richiesta TED fallita")?;
         let status=response.status(); if !status.is_success(){let body=response.text().await.unwrap_or_default();bail!("TED ha risposto {status}: {}",body.chars().take(500).collect::<String>());}
         let data:Value=response.json().await.context("risposta TED non valida")?;
-        let notices=data.get("notices").and_then(Value::as_array).context("risposta TED priva di avvisi")?;
+        let (notices,next)=validate_ted_page(&data)?;
         if notices.is_empty(){break;}
+        let next=next.expect("una pagina non vuota deve avere un cursore");
+        if !tokens.insert(next.clone()){bail!("TED ha restituito un cursore duplicato: importazione interrotta");}
         stats.fetched+=notices.len() as u64;
         let mut batch=Vec::new();
         for raw in notices {if let Some(notice)=normalize::normalize(raw) { *stats.per_type.entry(notice.notice_type.clone()).or_default()+=1;batch.push(BatchRow {notice,raw:raw.clone()}); } else {stats.skipped+=1;}}
         let saved=save_batch(&path,&batch)?;stats.saved+=saved.notices;stats.awards+=saved.awards;
-        let next=data.get("iterationNextToken").and_then(Value::as_str).filter(|s|!s.is_empty()).map(str::to_owned);
-        match next {Some(next)=>{if !tokens.insert(next.clone()){bail!("TED ha restituito un cursore duplicato: importazione interrotta");}token=Some(next)},None=>break}
+        token=Some(next);
     }
     stats.finished_at=Some(db::now_iso());
     progress(IngestProgress {phase:"done".into(),message:"TED · importazione completata".into(),fetched:stats.fetched,saved:stats.saved,awards:stats.awards,notice_type:None,current:stats.fetched,total:stats.fetched});
@@ -96,6 +110,15 @@ pub async fn run(path:PathBuf,from:String,to:String,types:Vec<String>,progress:i
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ted_iteration_rejects_partial_pages_and_accepts_empty_completion() {
+        assert!(validate_ted_page(&json!({"timedOut":true,"notices":[{}],"iterationNextToken":"next"})).is_err());
+        assert!(validate_ted_page(&json!({"timedOut":true,"notices":[]})).is_err());
+        assert!(validate_ted_page(&json!({"notices":[{}]})).is_err());
+        assert!(validate_ted_page(&json!({"notices":[{}],"iterationNextToken":"  "})).is_err());
+        assert_eq!(validate_ted_page(&json!({"notices":[],"iterationNextToken":"unused"})).unwrap().1, None);
+        assert_eq!(validate_ted_page(&json!({"notices":[{}],"iterationNextToken":"next"})).unwrap().1.as_deref(), Some("next"));
+    }
     #[test]
     fn reimport_and_cross_source_cig_keep_user_signals() {
         let dir=std::env::temp_dir().join(format!("cig-ingest-{}-{:?}",std::process::id(),std::thread::current().id()));
