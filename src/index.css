@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+@theme {
+  --color-page: #f2f5f7;
+  --color-surface: #ffffff;
+  --color-copy: #334155;
+  --color-heading: #16324a;
+  --color-muted: #556a7a;
+  --color-line: #d8e1e7;
+  --color-cyan-900: #164e63;
+  --color-cyan-800: #155e75;
+  --color-cyan-700: #0e7490;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-copy);
+  font-family: "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #cce7ed;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #bdcbd3;
+  border-radius: 8px;
+  border: 2px solid #f2f5f7;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-shell {
+  --ink: #16324a;
+  --muted: #556a7a;
+  --line: #d8e1e7;
+  --nav-bg: #f9fbfc;
+}
+
+.app-sidebar {
+  background: var(--nav-bg);
+  border-right: 1px solid var(--line);
+}
+
+.app-topbar {
+  min-height: 76px;
+}
+
+.brand-mark {
+  background: #164e63;
+  border: 1px solid #0e3f50;
+  border-radius: 2px;
+  box-shadow: inset 0 -4px 0 rgba(7, 35, 48, 0.24);
+  letter-spacing: -0.08em;
+}
+
+.nav-item-active {
+  color: #123d53;
+  background: #e8f0f3;
+  border-left-color: #0e7490;
+}
+
+/* Il fuoco da tastiera deve essere sempre visibile: i campi hanno già il loro
+   anello, gli altri elementi lo prendono da qui. */
+:where(button, a, [role="button"], [role="tab"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--color-cyan-700);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer components {
+  .card {
+    @apply border border-line bg-white;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded border border-slate-300 bg-white px-3 py-2
+      text-[13px] font-medium text-slate-700 transition-colors disabled:cursor-not-allowed
+      disabled:opacity-40 hover:border-cyan-800 hover:bg-cyan-50 hover:text-cyan-900;
+  }
+  .btn-primary {
+    @apply border-cyan-800 bg-cyan-800 text-white hover:border-cyan-900 hover:bg-cyan-900 hover:text-white;
+  }
+  .btn-ghost {
+    @apply border-transparent bg-transparent text-slate-600 hover:border-transparent hover:bg-slate-100 hover:text-slate-900;
+  }
+  .input {
+    @apply w-full rounded border border-slate-300 bg-white px-3 py-2 text-[13px]
+      text-slate-800 outline-none transition placeholder:text-slate-400
+      focus:border-cyan-700 focus:ring-2 focus:ring-cyan-700/15;
+  }
+  .label {
+    @apply mb-1.5 block text-[11px] font-semibold text-slate-600;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[10px]
+      font-semibold uppercase tracking-wide;
+  }
+  .th {
+    @apply px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500;
+  }
+  .td {
+    @apply px-3 py-2.5 align-top text-[13px] text-slate-700;
+  }
+  .row-hover {
+    @apply border-t border-slate-200 transition-colors hover:bg-cyan-50/50;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 760px) {
+  .app-sidebar {
+    width: 68px;
+    overflow: hidden;
+  }
+  .app-sidebar > div:first-child {
+    padding: 14px 10px;
+  }
+  .app-sidebar > div:first-child > div > div:last-child,
+  .app-sidebar nav > div:not(.nav-item),
+  .app-sidebar nav .nav-item span,
+  .app-sidebar > div:last-child {
+    display: none;
+  }
+  .app-sidebar nav {
+    padding: 12px 8px;
+  }
+  .app-sidebar .nav-item {
+    justify-content: center;
+    padding: 10px 4px;
+  }
+  .app-topbar {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
