@@ -25,4 +25,4 @@ jobs:
             -H 'apikey: sb_publishable_Dv_6c1rLy2tAyobh87eY-g_YlmJiQ2z' \
             -d '{}' https://ulfxnswidqjsxsjmknws.supabase.co/functions/v1/cig-ted-search)
           echo "Unauthenticated status: $status"
-          test "$status" = '401'
+          if [ "$status" != '401' ]; then echo "::error::Unexpected unauthenticated HTTP status $status"; exit 1; fi
