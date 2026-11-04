@@ -26,7 +26,7 @@ e imposta URL e chiave pubblicabile. Non inserire mai service-role o secret key
 nelle variabili `VITE_*` o nel frontend.
 
 Senza accesso, l'app mostra tre gare fittizie e salva le modifiche solo nella
-sessione del browser. Dopo l'accesso, l'archivio è separato dalla demo e usa la
+sessione del browser. Dopo l'accesso, l'archivio è separato dalla demo e usa le
 tabelle `public.cig_web_notices` e `public.cig_web_evaluations`: le migrazioni
 in `supabase/migrations/` abilitano RLS e limitano lettura e modifiche al
 proprietario autenticato. Nessun dato della desktop viene importato automaticamente.
@@ -34,21 +34,36 @@ proprietario autenticato. Nessun dato della desktop viene importato automaticame
 Nell'anteprima sono disponibili creazione e modifica manuale, ricerca testuale,
 filtro per regione, bacheca con trascinamento o menu accessibile, calendario
 mensile ed export Excel dei risultati filtrati. La valutazione delle relazioni
-accetta testo incollato o file TXT, consente di modificare i criteri e mostra
+accetta testo incollato, TXT o PDF con testo selezionabile (fino a 15 MB e
+100 pagine; niente OCR), consente di modificare i criteri e mostra
 corrispondenze letterali, frasi e un punteggio indicativo proporzionale alle
 parole trovate: non interpreta il contesto, non è un punteggio ufficiale e non
 sostituisce una verifica esperta. Si salva solo su richiesta: in demo nella
-sessione, da autenticati nel proprio archivio. Importazioni TED/ANAC, ricerca
-semantica, analisi PDF, alert email e le restanti funzioni desktop non sono
+sessione, da autenticati nel proprio archivio. La ricerca TED tramite funzione
+Supabase autenticata permette di cercare gli avvisi italiani recenti (massimo 90
+giorni, prime 20 pagine) e salvarli individualmente senza sovrascrivere note o
+stato. La funzione e la migrazione sono nel repository; il flusso con un account
+reale non è ancora stato verificato end-to-end. La risposta della fonte TED e
+il rifiuto delle richieste non autenticate sono stati verificati in CI. È anche
+possibile leggere manualmente un CSV ANAC nel browser: la funzione esamina solo
+le prime 5.000 righe, mostra fino a 100 CIG e salva singolarmente quelli scelti;
+non è un'importazione completa, automatica o una deduplica incrociata TED/ANAC.
+Ricerca semantica, analisi automatica dei disciplinari, alert email e le restanti funzioni desktop non sono
 ancora collegate nel browser.
 
 La registrazione richiede conferma email: il progetto deve consentire l'URL di
 ritorno in Supabase Auth e avere la consegna email configurata per i destinatari
 desiderati. L'URL dell'anteprima Arena corrente è stato aggiunto alla allowlist
 senza rimuovere quello preesistente; è temporaneo e andrà aggiornato per un
-altro host. La registrazione e il salvataggio online non sono ancora stati
+altro host. La registrazione, il recupero password e il salvataggio online non sono ancora stati
 verificati end-to-end con un account reale. L'anteprima non è un deployment
-pubblico permanente e non equivale alla versione desktop completa.
+pubblico permanente e non equivale alla versione desktop completa. GitHub Pages
+è abilitato e il workflow di pubblicazione è predisposto in
+`.github/workflows/pages.yml`. L'ambiente `github-pages` consente deployment da
+`main`: il workflow è attualmente nel branch di lavoro e il sito non è ancora
+pubblicato. Una volta integrato su `main`, il percorso previsto è
+`https://aiinnovationguru-png.github.io/cig/`. La pubblicazione non elimina le
+limitazioni funzionali e di verifica descritte sopra.
 
 ## Cosa fa
 

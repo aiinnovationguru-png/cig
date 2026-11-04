@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluate } from '../src/web/evaluation.ts';
+import { evaluate } from '../src/web/evaluation-engine.ts';
 
 const criterion = (keywords, weight = 20) => ({ id: 'test', label: 'Test', weight, keywords });
 test('la valutazione riporta solo evidenze letterali e non trova sottostringhe', () => {

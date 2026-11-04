@@ -19,6 +19,8 @@
     "@tauri-apps/plugin-opener": "^2.5.0",
     "allow": "^2.1.0",
     "api-anything": "^0.3.2",
+    "papaparse": "^5.7.0",
+    "pdfjs-dist": "^6.5.438",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "write-excel-file": "^4.1.1",
@@ -27,6 +29,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.14",
     "@tauri-apps/cli": "^2.9.0",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",

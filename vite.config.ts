@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 // Tauri expects a fixed dev server URL and its own console output.
 export default defineConfig({
+  base: process.env.VITE_BASE_PATH || "/",
   plugins: [react(), tailwindcss()],
   clearScreen: false,
   server: {
